@@ -1,0 +1,10 @@
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+*.log
+backend/leads.json
+backend/leads.json.lock
+backend/.leads.json.*.tmp
+
