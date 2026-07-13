@@ -9,7 +9,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
 from pydantic import BaseModel
-
+from business_config import (
+    FAQ,
+    SERVICES,
+    WELCOME_MESSAGE,
+    build_business_info,
+    format_contact_details,
+    get_public_business_config,
+)
 
 load_dotenv()
 
@@ -43,16 +50,7 @@ class ChatResponse(BaseModel):
     reply: str
 
 
-BUSINESS_INFO = """
-Business name: Phoenix Demo Business
-Business type: Small service business
-Location: Hyderabad, India
-Business hours: Monday to Saturday, 9:00 AM to 7:00 PM
-Closed: Sunday
-Support email: support@example.com
-Phone: +91 98765 43210
-Appointments: Available. Ask customer for name, phone number, and preferred time.
-"""
+BUSINESS_INFO = build_business_info()
 
 
 booking_state = {
@@ -279,15 +277,18 @@ def get_demo_reply(user_input: str) -> str:
     message = user_input.lower().strip()
 
     if "hour" in message or "open" in message:
-        return "Demo mode: We are open Monday to Saturday from 9:00 AM to 7:00 PM. We are closed on Sundays."
+        return f"Demo mode: {FAQ['timings']}"
 
     if "location" in message or "where" in message:
-        return "Demo mode: We are located in Hyderabad, India."
+        return f"Demo mode: {FAQ['location']}"
 
     if "contact" in message or "support" in message or "phone" in message or "email" in message:
-        return "Demo mode: You can contact support at support@example.com or call +91 98765 43210."
+        return f"Demo mode: You can contact us by {format_contact_details()}."
 
-    return "Demo mode: I can help with business hours, location, appointments, and support contact details."
+    if "service" in message or "speciality" in message or "specialty" in message:
+        return f"Demo mode: Our services include {', '.join(SERVICES)}."
+
+    return f"Demo mode: {WELCOME_MESSAGE}"
 
 
 def get_ai_reply(user_input: str) -> str:
@@ -312,7 +313,7 @@ def get_ai_reply(user_input: str) -> str:
     # Appointment FAQ should not directly start booking.
     if is_appointment_faq(user_input):
         booking_state["offered_booking"] = True
-        return "Yes, appointments are available. Would you like to book one now? Reply Yes or Book."
+        return f"{FAQ['appointment']} Would you like to book one now? Reply Yes or Book."
 
     # Direct booking request should start booking.
     if is_start_booking_intent(user_input):
@@ -352,6 +353,11 @@ Rules:
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+
+@app.get("/business-config")
+def get_business_config():
+    return get_public_business_config()
 
 
 @app.get("/leads")

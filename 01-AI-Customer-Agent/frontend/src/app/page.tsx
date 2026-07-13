@@ -1,10 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 type Message = {
   role: "user" | "bot";
   text: string;
+};
+
+type BusinessConfig = {
+  welcome_message: string;
 };
 
 type SpeechRecognitionLike = {
@@ -60,12 +64,7 @@ const languages = [
 ];
 
 export default function Home() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: "bot",
-      text: "Hi! I am your AI customer support assistant. You can type or speak to book an appointment.",
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
 
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -73,6 +72,45 @@ export default function Home() {
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [selectedLanguage, setSelectedLanguage] = useState("en-IN");
   const [voiceError, setVoiceError] = useState("");
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadWelcomeMessage() {
+      try {
+        const response = await fetch(
+          "http://127.0.0.1:8000/business-config",
+          { signal: controller.signal }
+        );
+
+        if (!response.ok) {
+          throw new Error("Backend request failed");
+        }
+
+        const config: BusinessConfig = await response.json();
+        setMessages((previousMessages) => [
+          { role: "bot", text: config.welcome_message },
+          ...previousMessages,
+        ]);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+
+        setMessages((previousMessages) => [
+          {
+            role: "bot",
+            text: "Sorry, I could not connect to the backend. Please check if FastAPI is running.",
+          },
+          ...previousMessages,
+        ]);
+      }
+    }
+
+    void loadWelcomeMessage();
+
+    return () => controller.abort();
+  }, []);
 
   function speakText(text: string) {
     if (!voiceEnabled) return;
@@ -180,7 +218,7 @@ export default function Home() {
       if (shouldSpeakReply) {
         speakText(data.reply);
       }
-    } catch (error) {
+    } catch {
       const errorText =
         "Sorry, I could not connect to the backend. Please check if FastAPI is running.";
 
