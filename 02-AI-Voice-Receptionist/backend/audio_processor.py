@@ -99,9 +99,9 @@ class CallerTurnBuffer:
     def __init__(
         self,
         *,
-        speech_threshold: int = 350,
-        end_silence_ms: int = 700,
-        minimum_speech_ms: int = 200,
+        speech_threshold: int = 450,
+        end_silence_ms: int = 400,
+        minimum_speech_ms: int = 120,
         pre_roll_ms: int = 200,
         maximum_turn_ms: int = 15_000,
     ) -> None:
@@ -115,6 +115,7 @@ class CallerTurnBuffer:
         self._speaking = False
         self._speech_frames = 0
         self._silence_frames = 0
+        self._suppressed_frames = 0
 
     def add_media(self, payload: str) -> list[bytes]:
         """Add one Twilio media payload and return zero or more completed WAVs."""
@@ -124,11 +125,22 @@ class CallerTurnBuffer:
         while len(self._pending) >= FRAME_BYTES_MULAW:
             frame = bytes(self._pending[:FRAME_BYTES_MULAW])
             del self._pending[:FRAME_BYTES_MULAW]
+            if self._suppressed_frames > 0:
+                self._suppressed_frames -= 1
+                continue
             utterance = self._process_frame(frame)
             if utterance is not None:
                 completed.append(utterance)
 
         return completed
+
+    def ignore_dtmf(self, suppression_ms: int = 300) -> None:
+        """Discard a current turn and briefly suppress keypad-tone audio."""
+        self._pending.clear()
+        self._reset_turn()
+        self._suppressed_frames = max(
+            1, suppression_ms // FRAME_DURATION_MS
+        )
 
     def flush(self) -> bytes | None:
         """Flush a sufficiently long active turn when a stream stops."""
@@ -185,4 +197,3 @@ class CallerTurnBuffer:
         self._speaking = False
         self._speech_frames = 0
         self._silence_frames = 0
-

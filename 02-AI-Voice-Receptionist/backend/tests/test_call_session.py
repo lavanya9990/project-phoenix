@@ -35,9 +35,10 @@ def test_appointment_state_collects_every_required_field() -> None:
         "10 AM",
         "Requested Service",
     ]
-    for answer in answers:
+    for expected_count, answer in enumerate(answers, start=1):
         handled, prompt, completed = session.appointment_turn(answer)
         assert handled is True
+        assert len(session.appointment.values) == expected_count
 
     assert prompt is None
     assert completed == dict(zip(APPOINTMENT_FIELDS, answers, strict=True))

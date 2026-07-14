@@ -74,9 +74,35 @@ def test_caller_turn_buffer_emits_wav_after_silence() -> None:
         assert wav_file.getsampwidth() == 2
 
 
+def test_short_silence_after_speech_emits_a_turn() -> None:
+    speech_pcm = struct.pack("<h", 3_000) * 160
+    speech_frame = audioop.lin2ulaw(speech_pcm, 2)
+    silence_frame = b"\xff" * 160
+    payload = base64.b64encode(
+        speech_frame * 6 + silence_frame * 20
+    ).decode("ascii")
+
+    completed = CallerTurnBuffer().add_media(payload)
+
+    assert len(completed) == 1
+
+
+def test_dtmf_suppression_discards_tone_audio() -> None:
+    tone_pcm = struct.pack("<h", 5_000) * 160
+    tone_frame = audioop.lin2ulaw(tone_pcm, 2)
+    silence_frame = b"\xff" * 160
+    buffer = CallerTurnBuffer()
+
+    buffer.ignore_dtmf()
+    completed = buffer.add_media(
+        base64.b64encode(tone_frame * 10 + silence_frame * 20).decode("ascii")
+    )
+
+    assert completed == []
+
+
 def test_pcm16_to_wav_has_expected_format() -> None:
     wav_audio = pcm16_to_wav(b"\x00\x00" * 160)
     with wave.open(io.BytesIO(wav_audio), "rb") as wav_file:
         assert wav_file.getparams().nchannels == 1
         assert wav_file.getparams().framerate == 8_000
-

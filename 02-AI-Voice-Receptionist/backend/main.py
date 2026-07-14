@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
@@ -44,6 +45,10 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+PHONE_LIKE_PATTERN = re.compile(
+    r"(?<!\w)\+?(?:\d[\s().-]*){7,}\d(?!\w)"
+)
 
 app = FastAPI(title="Phoenix AI Voice Receptionist")
 groq_settings = GroqSettings.from_environment()
@@ -144,6 +149,11 @@ async def _send_assistant_audio(
     session: CallSession,
     reply: str,
 ) -> None:
+    logger.info(
+        "Assistant response call=%s text=%r",
+        session.call_sid,
+        _redact_phone_numbers(reply),
+    )
     wav_audio = await groq_service.synthesize(reply)
     payload = wav_to_twilio_payload(wav_audio)
     await websocket.send_json(
@@ -173,20 +183,40 @@ async def _process_caller_turn(
         logger.info("Ignoring an empty transcription for call %s", session.call_sid)
         return
 
+    expected_field = session.appointment.current_field
+    safe_transcript = (
+        "[phone number redacted]"
+        if expected_field == "phone_number"
+        else _redact_phone_numbers(transcript)
+    )
+    logger.info(
+        "Caller transcript call=%s text=%r",
+        session.call_sid,
+        safe_transcript,
+    )
     session.add_message("user", transcript)
     handled, prompt, completed = session.appointment_turn(transcript)
+    _log_appointment_state(session, completed)
 
     if completed is not None:
         try:
-            await asyncio.to_thread(
+            saved_lead = await asyncio.to_thread(
                 lead_manager.save_completed_lead,
                 completed,
                 call_sid=session.call_sid,
                 caller_phone=session.caller_phone,
             )
+            logger.info(
+                "Lead save call=%s saved=true lead_id=%s",
+                session.call_sid,
+                saved_lead["id"],
+            )
             reply = APPOINTMENT_CONFIRMATION
         except LeadStorageError:
-            logger.error("Lead persistence failed for call %s", session.call_sid)
+            logger.error(
+                "Lead save call=%s saved=false",
+                session.call_sid,
+            )
             reply = APPOINTMENT_SAVE_ERROR
     elif handled:
         if prompt is None:
@@ -198,6 +228,45 @@ async def _process_caller_turn(
         )
 
     await _send_assistant_audio(websocket, session, reply)
+
+
+def _redact_phone_numbers(text: str) -> str:
+    def replace(match: re.Match[str]) -> str:
+        digits = re.sub(r"\D", "", match.group(0))
+        suffix = digits[-2:] if len(digits) >= 2 else "**"
+        return f"[phone ending {suffix}]"
+
+    return PHONE_LIKE_PATTERN.sub(replace, text)
+
+
+def _log_appointment_state(
+    session: CallSession,
+    completed: dict[str, str] | None,
+) -> None:
+    collected_fields = (
+        list(completed)
+        if completed is not None
+        else list(session.appointment.values)
+    )
+    logger.info(
+        "Appointment state call=%s active=%s collected_fields=%s next_field=%s",
+        session.call_sid,
+        session.appointment.active,
+        collected_fields,
+        session.appointment.current_field,
+    )
+
+
+def _handle_dtmf_event(
+    turn_buffer: CallerTurnBuffer,
+    session: CallSession | None,
+) -> None:
+    """Ignore in-stream keypad input without changing conversation state."""
+    turn_buffer.ignore_dtmf()
+    logger.info(
+        "Ignored in-call DTMF event call=%s",
+        session.call_sid if session else "unknown",
+    )
 
 
 async def _turn_worker(
@@ -318,8 +387,12 @@ async def media_stream(websocket: WebSocket) -> None:
                 )
                 break
 
-            if event in {"mark", "dtmf"}:
-                logger.debug("Received Twilio %s event", event)
+            if event == "dtmf":
+                _handle_dtmf_event(turn_buffer, session)
+                continue
+
+            if event == "mark":
+                logger.debug("Received Twilio mark event")
                 continue
 
             logger.debug("Ignoring unsupported Twilio event: %s", event)
@@ -346,4 +419,3 @@ async def media_stream(websocket: WebSocket) -> None:
             else:
                 worker.cancel()
             await asyncio.gather(worker, return_exceptions=True)
-
