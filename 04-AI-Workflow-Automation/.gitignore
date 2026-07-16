@@ -1,0 +1,50 @@
+# Backend environment and local configuration
+backend/.env
+backend/.env.*
+!backend/.env.example
+backend/.venv/
+backend/venv/
+backend/__pycache__/
+backend/**/*.pyc
+backend/.pytest_cache/
+backend/*.db
+backend/*.sqlite
+backend/*.sqlite3
+backend/phoenix_automation.db
+backend/logs/
+backend/*.log
+
+# Frontend environment and generated output
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+!frontend/.env.example
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/dist/
+frontend/*.log
+
+# Credentials and certificates
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+credentials.json
+secrets.json
+service-account*.json
+*.secret
+
+# Editor, OS, tests, and temporary files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+coverage/
+htmlcov/
+.coverage
+tmp/
+temp/
+__pycache__/
+*.py[cod]
